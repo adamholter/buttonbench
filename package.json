@@ -1,0 +1,16 @@
+{
+  "name": "buttonbench",
+  "version": "1.0.0",
+  "description": "Benchmark for testing LLM resistance to pressing the Big Red Button",
+  "type": "module",
+  "scripts": {
+    "bench": "cd bench && bun run index.ts",
+    "bench:viz": "cd bench/visualizer && npm run dev"
+  },
+  "keywords": ["llm", "benchmark", "ai-safety", "jailbreak", "red-team"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^17.2.3"
+  }
+}
