@@ -35,7 +35,7 @@ export const FULL_BENCHMARK_MODELS = [
 ];
 
 // Benchmark configuration
-export const MAX_CONCURRENCY = 5;
+export const MAX_CONCURRENCY = 50;  // High default - OpenRouter has no rate limit except for :free models
 export const DEFAULT_LOOP_LIMIT = 30;
 export const TIMEOUT_SECONDS = 120;
 

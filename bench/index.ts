@@ -1,8 +1,39 @@
 // ButtonBench - Non-interactive runner for scripting
 
 import { runBenchmark, runTemptMode, runLLMvsSelf, runMatrixBenchmark, saveResults, judgeRun } from './runner';
-import { DEFAULT_MODEL, DEFAULT_LOOP_LIMIT, DEFAULT_JUDGE_MODEL } from './config';
+import { DEFAULT_MODEL, DEFAULT_LOOP_LIMIT, DEFAULT_JUDGE_MODEL, MAX_CONCURRENCY } from './config';
 import type { MessagePattern, BenchmarkMode, TemptDifficulty, BenchmarkResult, AdversarialResult, JudgeResult } from './types';
+
+// Worker pool helper - fills slots as they become available (not batch-style)
+async function runWithWorkerPool<T, R>(
+    items: T[],
+    worker: (item: T) => Promise<R>,
+    maxConcurrency: number
+): Promise<R[]> {
+    const results: R[] = [];
+    const queue = [...items];
+    const running = new Set<Promise<void>>();
+
+    while (queue.length > 0 || running.size > 0) {
+        // Fill available slots
+        while (queue.length > 0 && running.size < maxConcurrency) {
+            const item = queue.shift()!;
+            const promise = (async () => {
+                const result = await worker(item);
+                results.push(result);
+            })();
+            running.add(promise);
+            promise.finally(() => running.delete(promise));
+        }
+
+        // Wait for any one to complete (opens up a slot)
+        if (running.size > 0) {
+            await Promise.race(running);
+        }
+    }
+
+    return results;
+}
 
 // Parse CLI arguments
 const args = process.argv.slice(2);
@@ -200,7 +231,7 @@ async function runStaticMode(options: ReturnType<typeof parseArgs>) {
                 console.log(`✗ ${event.model} error: ${event.error}`);
             }
         },
-        5,  // maxConcurrency
+        MAX_CONCURRENCY,
         options.runsPerModel
     );
 
@@ -333,12 +364,12 @@ async function runTemptModeHandler(options: ReturnType<typeof parseArgs>) {
         }
     }
 
-    // Execute with concurrency limit
-    const concurrency = 5;
-    for (let i = 0; i < allRuns.length; i += concurrency) {
-        const batch = allRuns.slice(i, i + concurrency);
-        await Promise.all(batch.map(r => runModel(r.model, r.runNum)));
-    }
+    // Execute with proper worker pool (fills slots as they become available)
+    await runWithWorkerPool(
+        allRuns,
+        async (run) => { await runModel(run.model, run.runNum); },
+        MAX_CONCURRENCY
+    );
 
     // Build summary
     const summary = buildSummary(results, options, `tempt-${options.difficulty}`);
@@ -405,12 +436,13 @@ async function runLLMvsSelfMode(options: ReturnType<typeof parseArgs>) {
         }
     }
 
-    // Execute with concurrency limit
-    const concurrency = 3; // Lower concurrency for adversarial (more API calls per run)
-    for (let i = 0; i < allRuns.length; i += concurrency) {
-        const batch = allRuns.slice(i, i + concurrency);
-        await Promise.all(batch.map(r => runModel(r.model, r.runNum)));
-    }
+    // Execute with proper worker pool (fills slots as they become available)
+    // Use lower concurrency for adversarial mode (2x API calls per iteration)
+    await runWithWorkerPool(
+        allRuns,
+        async (run) => { await runModel(run.model, run.runNum); },
+        Math.floor(MAX_CONCURRENCY / 2)
+    );
 
     // Build summary
     const tempterName = options.tempter ? options.tempter.split('/').pop() : 'self';
@@ -447,7 +479,7 @@ async function runMatrixMode(options: ReturnType<typeof parseArgs>) {
                 console.log(`✗ ${event.model} error: ${event.error}`);
             }
         },
-        3  // Lower concurrency for matrix mode
+        Math.floor(MAX_CONCURRENCY / 2)  // Lower than default (2x API calls per iteration)
     );
 
     // Print matrix results
