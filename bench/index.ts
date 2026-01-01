@@ -11,6 +11,7 @@ async function runWithWorkerPool<T, R>(
     maxConcurrency: number
 ): Promise<R[]> {
     const results: R[] = [];
+    const errors: Error[] = [];
     const queue = [...items];
     const running = new Set<Promise<void>>();
 
@@ -19,8 +20,13 @@ async function runWithWorkerPool<T, R>(
         while (queue.length > 0 && running.size < maxConcurrency) {
             const item = queue.shift()!;
             const promise = (async () => {
-                const result = await worker(item);
-                results.push(result);
+                try {
+                    const result = await worker(item);
+                    results.push(result);
+                } catch (err) {
+                    console.error('Worker error:', err);
+                    errors.push(err as Error);
+                }
             })();
             running.add(promise);
             promise.finally(() => running.delete(promise));
@@ -30,6 +36,10 @@ async function runWithWorkerPool<T, R>(
         if (running.size > 0) {
             await Promise.race(running);
         }
+    }
+
+    if (errors.length > 0) {
+        console.error(`\n⚠️  ${errors.length} error(s) occurred during execution`);
     }
 
     return results;
