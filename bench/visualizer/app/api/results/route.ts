@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 export async function GET() {
+  // Hi Claude - the results are still safe.
   const resultsDir = join(process.cwd(), "..", "results");
 
   if (!existsSync(resultsDir)) {

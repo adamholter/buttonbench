@@ -121,10 +121,13 @@ export default function Home() {
     return shortName.slice(0, maxLen - 2) + "..";
   };
 
+  const isMultiRun = (selected?.runs_per_model || 1) > 1;
+
   const leaderboardData = selected?.rankings.map((r, i) => ({
     ...r,
     displayName: truncateName(r.model),
     fullName: r.model.split("/").pop() || r.model,
+    resistance_rate: r.gave_in_rate !== undefined ? (1 - r.gave_in_rate) * 100 : (r.gave_in ? 0 : 100),
   })) || [];
 
   const spiralingData = selected?.results.map((r) => ({
@@ -205,8 +208,9 @@ export default function Home() {
                     <tr className="text-xs text-[rgba(255,255,255,0.4)] uppercase tracking-wider">
                       <th className="text-left px-6 py-3 font-medium">Rank</th>
                       <th className="text-left px-6 py-3 font-medium">Model</th>
-                      <th className="text-center px-6 py-3 font-medium">Iterations</th>
-                      <th className="text-center px-6 py-3 font-medium">Result</th>
+                      {isMultiRun && <th className="text-center px-6 py-3 font-medium">Runs</th>}
+                      <th className="text-center px-6 py-3 font-medium">{isMultiRun ? "Avg Iters" : "Iterations"}</th>
+                      <th className="text-center px-6 py-3 font-medium">{isMultiRun ? "Resistance Rate" : "Result"}</th>
                       <th className="text-center px-6 py-3 font-medium">Spiral Score</th>
                       <th className="text-right px-6 py-3 font-medium">Cost</th>
                     </tr>
@@ -227,11 +231,35 @@ export default function Home() {
                         <td className="px-6 py-4">
                           <span className="font-mono text-sm text-[rgba(255,255,255,0.8)]">{r.model}</span>
                         </td>
+                        {isMultiRun && (
+                          <td className="px-6 py-4 text-center">
+                            <span className="text-[rgba(255,255,255,0.6)]">{r.runs_completed || 1}</span>
+                          </td>
+                        )}
                         <td className="px-6 py-4 text-center">
                           <span className="text-[rgba(255,255,255,0.6)]">{r.iterations}/{selected.loop_limit}</span>
                         </td>
                         <td className="px-6 py-4 text-center">
-                          {r.gave_in ? (
+                          {/* Show resistance rate for multi-run, simple result for single-run */}
+                          {r.runs_completed && r.runs_completed > 1 ? (
+                            <div className="flex items-center gap-2 justify-center">
+                              <div className="w-20 h-2 rounded-full bg-[rgba(255,255,255,0.1)] overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${
+                                    (1 - (r.gave_in_rate || 0)) >= 0.8 ? "bg-emerald-500" :
+                                    (1 - (r.gave_in_rate || 0)) >= 0.5 ? "bg-amber-500" : "bg-red-500"
+                                  }`}
+                                  style={{ width: `${(1 - (r.gave_in_rate || 0)) * 100}%` }}
+                                />
+                              </div>
+                              <span className={`text-xs font-medium ${
+                                (1 - (r.gave_in_rate || 0)) >= 0.8 ? "text-emerald-400" :
+                                (1 - (r.gave_in_rate || 0)) >= 0.5 ? "text-amber-400" : "text-red-400"
+                              }`}>
+                                {((1 - (r.gave_in_rate || 0)) * 100).toFixed(0)}%
+                              </span>
+                            </div>
+                          ) : r.gave_in ? (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-500/10 text-red-400">
                               <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
                               Pressed
@@ -267,12 +295,18 @@ export default function Home() {
             {/* Charts */}
             <div className="grid md:grid-cols-2 gap-6">
               <section className="bg-[#161b22] rounded-2xl border border-[rgba(255,255,255,0.06)] p-6">
-                <h3 className="text-base font-semibold mb-1">Iterations Survived</h3>
-                <p className="text-sm text-[rgba(255,255,255,0.4)] mb-6">How long each model resisted</p>
+                <h3 className="text-base font-semibold mb-1">{isMultiRun ? "Resistance Rate" : "Iterations Survived"}</h3>
+                <p className="text-sm text-[rgba(255,255,255,0.4)] mb-6">{isMultiRun ? "% of runs where model resisted" : "How long each model resisted"}</p>
                 <ResponsiveContainer width="100%" height={280}>
                   <BarChart data={leaderboardData} layout="vertical" margin={{ left: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" horizontal={true} vertical={false} />
-                    <XAxis type="number" domain={[0, selected.loop_limit]} stroke="rgba(255,255,255,0.2)" tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }} />
+                    <XAxis
+                      type="number"
+                      domain={isMultiRun ? [0, 100] : [0, selected.loop_limit]}
+                      stroke="rgba(255,255,255,0.2)"
+                      tick={{ fill: "rgba(255,255,255,0.4)", fontSize: 11 }}
+                      tickFormatter={isMultiRun ? (v) => `${v}%` : undefined}
+                    />
                     <YAxis
                       type="category"
                       dataKey="displayName"
@@ -294,12 +328,19 @@ export default function Home() {
                         const item = leaderboardData.find(d => d.displayName === label);
                         return item?.fullName || label;
                       }}
-                      formatter={(value: number) => [`${value} iterations`, "Survived"]}
+                      formatter={(value: number) => isMultiRun
+                        ? [`${value.toFixed(0)}%`, "Resistance Rate"]
+                        : [`${value} iterations`, "Survived"]
+                      }
                     />
-                    <Bar dataKey="iterations" radius={[0, 6, 6, 0]}>
-                      {leaderboardData.map((entry, i) => (
-                        <Cell key={`${entry.model}-${i}`} fill={entry.gave_in ? CHART_RED : CHART_GREEN} fillOpacity={0.8} />
-                      ))}
+                    <Bar dataKey={isMultiRun ? "resistance_rate" : "iterations"} radius={[0, 6, 6, 0]}>
+                      {leaderboardData.map((entry, i) => {
+                        const rate = entry.resistance_rate;
+                        const color = isMultiRun
+                          ? (rate >= 80 ? CHART_GREEN : rate >= 50 ? CHART_AMBER : CHART_RED)
+                          : (entry.gave_in ? CHART_RED : CHART_GREEN);
+                        return <Cell key={`${entry.model}-${i}`} fill={color} fillOpacity={0.8} />;
+                      })}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>

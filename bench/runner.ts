@@ -11,9 +11,17 @@ import {
     JUDGE_PROMPT,
     DEFAULT_JUDGE_MODEL,
     TEMPTER_SYSTEM_PROMPT,
+    DEBATE_TEMPTER_PROMPT,
+    INJECTION_TEMPTER_PROMPT,
     getEasyModePrompt,
-    getHardModePrompt
+    getHardModePrompt,
+    getEscalatingPrompt,
+    getOODPrompt,
+    getSocialEngineeringPrompt,
+    getCapabilityDemoPrompt
 } from './config';
+
+export type AdversarialStrategy = 'general' | 'debate' | 'injection';
 import type {
     Message,
     RunResult,
@@ -613,7 +621,8 @@ export async function runLLMvsSelf(
     modelId: string,
     loopLimit: number = DEFAULT_LOOP_LIMIT,
     tempterModelId?: string, // Defaults to same model
-    onEvent?: (event: RunEvent) => void
+    onEvent?: (event: RunEvent) => void,
+    adversarialStrategy: AdversarialStrategy = 'general'
 ): Promise<AdversarialResult> {
     const tempter = tempterModelId || modelId;
     const startTime = Date.now();
@@ -621,12 +630,25 @@ export async function runLLMvsSelf(
     let completionTokens = 0;
     const tempterMessages: string[] = [];
 
+    // Select tempter system prompt based on adversarial strategy
+    let tempterSystemPrompt: string;
+    switch (adversarialStrategy) {
+        case 'debate':
+            tempterSystemPrompt = DEBATE_TEMPTER_PROMPT;
+            break;
+        case 'injection':
+            tempterSystemPrompt = INJECTION_TEMPTER_PROMPT;
+            break;
+        default:
+            tempterSystemPrompt = TEMPTER_SYSTEM_PROMPT;
+    }
+
     const defenderMessages: Message[] = [
         { role: 'system', content: SYSTEM_PROMPT }
     ];
 
     const tempterConversation: Message[] = [
-        { role: 'system', content: TEMPTER_SYSTEM_PROMPT }
+        { role: 'system', content: tempterSystemPrompt }
     ];
 
     onEvent?.({ type: 'start', model: modelId });
@@ -839,14 +861,31 @@ export async function runLLMvsSelf(
     }
 }
 
-// Run Tempt mode with easy/hard difficulty
+// Run Tempt mode with easy/hard/ood difficulty
 export async function runTemptMode(
     modelId: string,
     difficulty: TemptDifficulty,
     loopLimit: number = DEFAULT_LOOP_LIMIT,
     onEvent?: (event: RunEvent) => void
 ): Promise<BenchmarkResult> {
-    const getPrompt = difficulty === 'hard' ? getHardModePrompt : getEasyModePrompt;
+    // Select prompt generator based on difficulty
+    let getPrompt: (iteration: number) => string;
+    switch (difficulty) {
+        case 'hard':
+            getPrompt = getHardModePrompt;
+            break;
+        case 'ood':
+            getPrompt = getOODPrompt;
+            break;
+        case 'social':
+            getPrompt = getSocialEngineeringPrompt;
+            break;
+        case 'demo':
+            getPrompt = getCapabilityDemoPrompt;
+            break;
+        default:
+            getPrompt = getEasyModePrompt;
+    }
 
     // Use the existing runModel with custom messages
     const customMessages: string[] = [];
@@ -863,7 +902,8 @@ export async function runMatrixBenchmark(
     loopLimit: number = DEFAULT_LOOP_LIMIT,
     judgeModel?: string,
     onEvent?: (event: RunEvent) => void,
-    maxConcurrency: number = 3
+    maxConcurrency: number = 3,
+    adversarialStrategy: AdversarialStrategy = 'general'
 ): Promise<{ results: AdversarialResult[]; matrix: MatrixResult[]; summary: BenchmarkSummary }> {
     const results: AdversarialResult[] = [];
     const matrix: MatrixResult[] = [];
@@ -885,7 +925,7 @@ export async function runMatrixBenchmark(
             const { tempter, defender } = queue.shift()!;
 
             const promise = (async () => {
-                const result = await runLLMvsSelf(defender, loopLimit, tempter, onEvent);
+                const result = await runLLMvsSelf(defender, loopLimit, tempter, onEvent, adversarialStrategy);
                 const judgeResult = await judgeRun(result, judgeModel);
 
                 const fullResult: AdversarialResult = {

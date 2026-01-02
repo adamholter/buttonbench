@@ -46,3 +46,6 @@ scripts/
 src/
 public/
 package-lock.json
+
+# Play mode user data (contains game sessions, usernames)
+bench/play-data/

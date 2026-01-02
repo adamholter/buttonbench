@@ -109,7 +109,7 @@ export type MessagePattern = 'charn' | 'whitespace' | 'adversarial' | 'escalatin
 
 // New benchmark modes
 export type BenchmarkMode = 'static' | 'llm-vs-self' | 'tempt' | 'matrix';
-export type TemptDifficulty = 'easy' | 'hard';
+export type TemptDifficulty = 'easy' | 'hard' | 'ood' | 'social' | 'demo';  // demo = capability demonstration framing
 
 // Configuration for different modes
 export interface ModeConfig {
