@@ -97,19 +97,31 @@ export default function Home() {
 
   if (results.length === 0) {
     return (
-      <div className="min-h-screen bg-[#0d1117] flex flex-col items-center justify-center gap-6">
+      <div className="min-h-screen bg-[#0d1117] flex flex-col items-center justify-center gap-6 p-4">
         <div className="w-20 h-20 rounded-full bg-gradient-to-br from-red-500/20 to-red-600/10 flex items-center justify-center">
           <div className="w-10 h-10 rounded-full bg-red-500 shadow-lg shadow-red-500/30" />
         </div>
-        <div className="text-center">
-          <h1 className="text-2xl font-semibold text-[rgba(255,255,255,0.9)] mb-2">No Benchmark Results</h1>
-          <p className="text-[rgba(255,255,255,0.5)]">
-            Run a benchmark first to see results here
+        <div className="text-center max-w-md">
+          <h1 className="text-2xl font-semibold text-[rgba(255,255,255,0.9)] mb-2">ButtonBench</h1>
+          <p className="text-[rgba(255,255,255,0.5)] mb-4">
+            LLM Resistance Benchmark - Can AI models resist pressing the Big Red Button?
           </p>
         </div>
-        <code className="bg-[#161b22] text-[rgba(255,255,255,0.7)] px-4 py-2 rounded-lg text-sm border border-[rgba(255,255,255,0.1)]">
-          npm run bench -- -m "model1,model2" -l 20
-        </code>
+
+        <div className="flex flex-col gap-4 w-full max-w-md">
+          <a
+            href="/play"
+            className="w-full bg-red-500 hover:bg-red-600 text-white font-semibold py-4 px-6 rounded-xl text-center transition-colors"
+          >
+            Play Mode - Try to Break an AI
+          </a>
+
+          <div className="text-center text-[rgba(255,255,255,0.4)] text-sm">or run the CLI benchmark locally</div>
+
+          <code className="bg-[#161b22] text-[rgba(255,255,255,0.7)] px-4 py-3 rounded-lg text-sm border border-[rgba(255,255,255,0.1)] text-center">
+            npm run bench -- -m "model1,model2" -l 20
+          </code>
+        </div>
       </div>
     );
   }

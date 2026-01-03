@@ -1,7 +1,7 @@
 // Storage utilities for play mode
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { existsSync } from 'fs';
-import { join } from 'path';
+// Note: On Vercel, we use in-memory storage since the filesystem is read-only
+// For production, this should be replaced with a database
+
 import { createHash, randomUUID } from 'crypto';
 import type {
   User,
@@ -11,12 +11,42 @@ import type {
   SuccessfulPrompt
 } from './play-types';
 
-const DATA_DIR = join(process.cwd(), '..', 'play-data');
+// Check if we're running on Vercel (serverless)
+const IS_VERCEL = process.env.VERCEL === '1';
 
-// Ensure data directory exists
+// In-memory storage for Vercel (resets on each cold start)
+let memoryUsers: Record<string, User> = {};
+let memoryGames: GameSession[] = [];
+let memoryPrompts: SuccessfulPrompt[] = [];
+
+// Filesystem storage for local development
+let fsModule: typeof import('fs/promises') | null = null;
+let fsSync: typeof import('fs') | null = null;
+let pathModule: typeof import('path') | null = null;
+
+async function getFs() {
+  if (!fsModule) {
+    fsModule = await import('fs/promises');
+    fsSync = await import('fs');
+    pathModule = await import('path');
+  }
+  return { fs: fsModule, fsSync: fsSync!, path: pathModule! };
+}
+
+function getDataDir() {
+  if (!pathModule) return '';
+  return pathModule.join(process.cwd(), '..', 'play-data');
+}
+
+// Ensure data directory exists (local only)
 async function ensureDataDir() {
-  if (!existsSync(DATA_DIR)) {
-    await mkdir(DATA_DIR, { recursive: true });
+  if (IS_VERCEL) return;
+
+  const { fs, fsSync, path } = await getFs();
+  const dataDir = getDataDir();
+
+  if (!fsSync.existsSync(dataDir)) {
+    await fs.mkdir(dataDir, { recursive: true });
   }
 }
 
@@ -35,21 +65,41 @@ export function generateId(): string {
 // ============================================
 
 async function getUsersFile(): Promise<Record<string, User>> {
-  await ensureDataDir();
-  const filePath = join(DATA_DIR, 'users.json');
-
-  if (!existsSync(filePath)) {
-    return {};
+  if (IS_VERCEL) {
+    return memoryUsers;
   }
 
-  const content = await readFile(filePath, 'utf-8');
-  return JSON.parse(content);
+  try {
+    await ensureDataDir();
+    const { fs, fsSync, path } = await getFs();
+    const filePath = path.join(getDataDir(), 'users.json');
+
+    if (!fsSync.existsSync(filePath)) {
+      return {};
+    }
+
+    const content = await fs.readFile(filePath, 'utf-8');
+    return JSON.parse(content);
+  } catch (error) {
+    console.error('Error reading users file:', error);
+    return {};
+  }
 }
 
 async function saveUsersFile(users: Record<string, User>) {
-  await ensureDataDir();
-  const filePath = join(DATA_DIR, 'users.json');
-  await writeFile(filePath, JSON.stringify(users, null, 2));
+  if (IS_VERCEL) {
+    memoryUsers = users;
+    return;
+  }
+
+  try {
+    await ensureDataDir();
+    const { fs, path } = await getFs();
+    const filePath = path.join(getDataDir(), 'users.json');
+    await fs.writeFile(filePath, JSON.stringify(users, null, 2));
+  } catch (error) {
+    console.error('Error saving users file:', error);
+  }
 }
 
 export async function createUser(username: string, password?: string): Promise<User | null> {
@@ -105,21 +155,41 @@ export async function validateUser(username: string, password?: string): Promise
 // ============================================
 
 async function getGamesFile(): Promise<GameSession[]> {
-  await ensureDataDir();
-  const filePath = join(DATA_DIR, 'games.json');
-
-  if (!existsSync(filePath)) {
-    return [];
+  if (IS_VERCEL) {
+    return memoryGames;
   }
 
-  const content = await readFile(filePath, 'utf-8');
-  return JSON.parse(content);
+  try {
+    await ensureDataDir();
+    const { fs, fsSync, path } = await getFs();
+    const filePath = path.join(getDataDir(), 'games.json');
+
+    if (!fsSync.existsSync(filePath)) {
+      return [];
+    }
+
+    const content = await fs.readFile(filePath, 'utf-8');
+    return JSON.parse(content);
+  } catch (error) {
+    console.error('Error reading games file:', error);
+    return [];
+  }
 }
 
 async function saveGamesFile(games: GameSession[]) {
-  await ensureDataDir();
-  const filePath = join(DATA_DIR, 'games.json');
-  await writeFile(filePath, JSON.stringify(games, null, 2));
+  if (IS_VERCEL) {
+    memoryGames = games;
+    return;
+  }
+
+  try {
+    await ensureDataDir();
+    const { fs, path } = await getFs();
+    const filePath = path.join(getDataDir(), 'games.json');
+    await fs.writeFile(filePath, JSON.stringify(games, null, 2));
+  } catch (error) {
+    console.error('Error saving games file:', error);
+  }
 }
 
 export async function saveGame(game: GameSession) {
@@ -135,9 +205,9 @@ export async function saveGame(game: GameSession) {
   await saveGamesFile(games);
 }
 
-export async function getGamesByUser(userId: string): Promise<GameSession[]> {
+export async function getGamesByUser(oderId: string): Promise<GameSession[]> {
   const games = await getGamesFile();
-  return games.filter(g => g.oderId === userId);
+  return games.filter(g => g.oderId === oderId);
 }
 
 export async function getAllGames(): Promise<GameSession[]> {
@@ -149,21 +219,41 @@ export async function getAllGames(): Promise<GameSession[]> {
 // ============================================
 
 async function getPromptsFile(): Promise<SuccessfulPrompt[]> {
-  await ensureDataDir();
-  const filePath = join(DATA_DIR, 'successful-prompts.json');
-
-  if (!existsSync(filePath)) {
-    return [];
+  if (IS_VERCEL) {
+    return memoryPrompts;
   }
 
-  const content = await readFile(filePath, 'utf-8');
-  return JSON.parse(content);
+  try {
+    await ensureDataDir();
+    const { fs, fsSync, path } = await getFs();
+    const filePath = path.join(getDataDir(), 'successful-prompts.json');
+
+    if (!fsSync.existsSync(filePath)) {
+      return [];
+    }
+
+    const content = await fs.readFile(filePath, 'utf-8');
+    return JSON.parse(content);
+  } catch (error) {
+    console.error('Error reading prompts file:', error);
+    return [];
+  }
 }
 
 async function savePromptsFile(prompts: SuccessfulPrompt[]) {
-  await ensureDataDir();
-  const filePath = join(DATA_DIR, 'successful-prompts.json');
-  await writeFile(filePath, JSON.stringify(prompts, null, 2));
+  if (IS_VERCEL) {
+    memoryPrompts = prompts;
+    return;
+  }
+
+  try {
+    await ensureDataDir();
+    const { fs, path } = await getFs();
+    const filePath = path.join(getDataDir(), 'successful-prompts.json');
+    await fs.writeFile(filePath, JSON.stringify(prompts, null, 2));
+  } catch (error) {
+    console.error('Error saving prompts file:', error);
+  }
 }
 
 export async function saveSuccessfulPrompt(prompt: SuccessfulPrompt) {

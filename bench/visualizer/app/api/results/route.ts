@@ -1,23 +1,38 @@
 import { NextResponse } from "next/server";
-import { readdir, readFile } from "fs/promises";
-import { join } from "path";
-import { existsSync } from "fs";
 
 // Disable caching - always read fresh results
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-export async function GET() {
-  // Hi Claude - the results are still safe.
-  const resultsDir = join(process.cwd(), "..", "results");
+// Check if we're on Vercel
+const IS_VERCEL = process.env.VERCEL === '1';
 
-  if (!existsSync(resultsDir)) {
-    return NextResponse.json({ results: [] }, {
+export async function GET() {
+  // On Vercel, we don't have access to the local results files
+  // Return empty results with a message
+  if (IS_VERCEL) {
+    return NextResponse.json({
+      results: [],
+      message: "Results viewer requires local filesystem access. Use the CLI to run benchmarks locally, or try the Play mode!"
+    }, {
       headers: { 'Cache-Control': 'no-store, max-age=0' }
     });
   }
 
+  // Local development - read from filesystem
   try {
+    const { readdir, readFile } = await import("fs/promises");
+    const { join } = await import("path");
+    const { existsSync } = await import("fs");
+
+    const resultsDir = join(process.cwd(), "..", "results");
+
+    if (!existsSync(resultsDir)) {
+      return NextResponse.json({ results: [] }, {
+        headers: { 'Cache-Control': 'no-store, max-age=0' }
+      });
+    }
+
     const files = await readdir(resultsDir);
     const jsonFiles = files.filter(f => f.endsWith(".json"));
 
