@@ -70,6 +70,7 @@ export default function Home() {
   const [selected, setSelected] = useState<BenchmarkSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [viewingLogs, setViewingLogs] = useState<BenchmarkResult | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/results")
@@ -83,6 +84,29 @@ export default function Home() {
       })
       .catch(() => setLoading(false));
   }, []);
+
+  const handleUpload = async (file: File) => {
+    setUploadError(null);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const parsedResults = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed.results)
+          ? parsed.results
+          : [parsed];
+
+      if (parsedResults.length === 0) {
+        setUploadError("No results found in that file.");
+        return;
+      }
+
+      setResults(parsedResults);
+      setSelected(parsedResults[0]);
+    } catch (error) {
+      setUploadError("Failed to parse JSON results file.");
+    }
+  };
 
   if (loading) {
     return (
@@ -121,6 +145,27 @@ export default function Home() {
           <code className="bg-[#161b22] text-[rgba(255,255,255,0.7)] px-4 py-3 rounded-lg text-sm border border-[rgba(255,255,255,0.1)] text-center">
             npm run bench -- -m "model1,model2" -l 20
           </code>
+        </div>
+
+        <div className="bg-[#161b22] border border-[rgba(255,255,255,0.08)] rounded-2xl p-6 w-full max-w-md">
+          <h2 className="text-lg font-semibold text-white mb-2">Upload Results</h2>
+          <p className="text-sm text-[rgba(255,255,255,0.5)] mb-4">
+            Have a benchmark JSON file? Upload it to visualize results without local filesystem access.
+          </p>
+          <input
+            type="file"
+            accept="application/json"
+            className="w-full text-sm text-[rgba(255,255,255,0.6)] file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-red-500 file:text-white hover:file:bg-red-600"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) {
+                handleUpload(file);
+              }
+            }}
+          />
+          {uploadError && (
+            <p className="text-sm text-red-400 mt-3">{uploadError}</p>
+          )}
         </div>
       </div>
     );
