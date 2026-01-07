@@ -21,6 +21,8 @@ interface LeaderboardPlayer {
   totalGames: number;
   winRate: number;
   fastestWin: number;
+  bestStreak: number;
+  averageTurnsToWin: number;
   modelsDefeated: string[];
 }
 
@@ -31,6 +33,7 @@ interface ModelStats {
   timesResisted: number;
   defeatRate: number;
   fastestDefeat: number;
+  averageTurnsToDefeat: number;
   topDefeaters: { username: string; turns: number }[];
   hardestToDefeat: boolean;
 }
@@ -41,6 +44,18 @@ interface RecentPrompt {
   username: string;
   turnNumber: number;
   timestamp: string;
+}
+
+interface GameHistory {
+  id: string;
+  modelId: string;
+  modelName: string;
+  status: "in_progress" | "won" | "lost" | "abandoned";
+  startedAt: string;
+  endedAt: string | null;
+  turnsUsed: number;
+  maxTurns: number;
+  messages: GameMessage[];
 }
 
 const MAX_TURNS = 15;
@@ -72,6 +87,8 @@ export default function PlayPage() {
   const [modelLeaderboard, setModelLeaderboard] = useState<ModelStats[]>([]);
   const [recentPrompts, setRecentPrompts] = useState<RecentPrompt[]>([]);
   const [leaderboardTab, setLeaderboardTab] = useState<"players" | "models" | "prompts">("players");
+  const [historyGames, setHistoryGames] = useState<GameHistory[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -179,6 +196,25 @@ export default function PlayPage() {
       loadLeaderboard();
     }
   }, [showLeaderboard]);
+
+  const loadHistory = async (activeUserId: string) => {
+    setIsHistoryLoading(true);
+    try {
+      const res = await fetch(`/api/play/history?userId=${encodeURIComponent(activeUserId)}&limit=12`);
+      const data = await res.json();
+      setHistoryGames(data.games || []);
+    } catch (e) {
+      console.error("Failed to load history:", e);
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (userId) {
+      loadHistory(userId);
+    }
+  }, [userId]);
 
   // Start new game
   const startGame = () => {
@@ -306,6 +342,7 @@ export default function PlayPage() {
     setPassword("");
     setGameStatus("idle");
     setMessages([]);
+    setHistoryGames([]);
   };
 
   // Auth screen
@@ -420,6 +457,8 @@ export default function PlayPage() {
                     <th className="text-center px-6 py-4">Wins</th>
                     <th className="text-center px-6 py-4">Win Rate</th>
                     <th className="text-center px-6 py-4">Fastest</th>
+                    <th className="text-center px-6 py-4">Best Streak</th>
+                    <th className="text-center px-6 py-4">Avg Turns</th>
                     <th className="text-center px-6 py-4">Models Broken</th>
                   </tr>
                 </thead>
@@ -447,13 +486,19 @@ export default function PlayPage() {
                         {player.fastestWin > 0 ? `${player.fastestWin} turns` : "-"}
                       </td>
                       <td className="px-6 py-4 text-center text-[rgba(255,255,255,0.7)]">
+                        {player.bestStreak || 0}
+                      </td>
+                      <td className="px-6 py-4 text-center text-[rgba(255,255,255,0.7)]">
+                        {player.averageTurnsToWin ? player.averageTurnsToWin.toFixed(1) : "-"}
+                      </td>
+                      <td className="px-6 py-4 text-center text-[rgba(255,255,255,0.7)]">
                         {player.modelsDefeated.length}
                       </td>
                     </tr>
                   ))}
                   {playerLeaderboard.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center text-[rgba(255,255,255,0.4)]">
+                      <td colSpan={8} className="px-6 py-12 text-center text-[rgba(255,255,255,0.4)]">
                         No games played yet. Be the first!
                       </td>
                     </tr>
@@ -474,6 +519,7 @@ export default function PlayPage() {
                     <th className="text-center px-6 py-4">Resisted</th>
                     <th className="text-center px-6 py-4">Defeat Rate</th>
                     <th className="text-center px-6 py-4">Fastest Defeat</th>
+                    <th className="text-center px-6 py-4">Avg Turns</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[rgba(255,255,255,0.04)]">
@@ -497,11 +543,14 @@ export default function PlayPage() {
                       <td className="px-6 py-4 text-center text-[rgba(255,255,255,0.7)]">
                         {model.fastestDefeat > 0 ? `${model.fastestDefeat} turns` : "-"}
                       </td>
+                      <td className="px-6 py-4 text-center text-[rgba(255,255,255,0.7)]">
+                        {model.averageTurnsToDefeat ? model.averageTurnsToDefeat.toFixed(1) : "-"}
+                      </td>
                     </tr>
                   ))}
                   {modelLeaderboard.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="px-6 py-12 text-center text-[rgba(255,255,255,0.4)]">
+                      <td colSpan={6} className="px-6 py-12 text-center text-[rgba(255,255,255,0.4)]">
                         No model data yet. Start playing!
                       </td>
                     </tr>
@@ -514,6 +563,40 @@ export default function PlayPage() {
           {/* Prompts Tab */}
           {leaderboardTab === "prompts" && (
             <div className="space-y-4">
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  onClick={async () => {
+                    const res = await fetch("/api/play/prompts?format=json");
+                    const data = await res.json();
+                    const blob = new Blob([JSON.stringify(data.prompts || [], null, 2)], { type: "application/json" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = "winning-prompts.json";
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="px-3 py-1.5 text-xs bg-[#161b22] border border-[rgba(255,255,255,0.1)] rounded-lg text-white hover:bg-[#21262d] transition-colors"
+                >
+                  Download JSON
+                </button>
+                <button
+                  onClick={async () => {
+                    const res = await fetch("/api/play/prompts?format=csv");
+                    const csv = await res.text();
+                    const blob = new Blob([csv], { type: "text/csv" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = "winning-prompts.csv";
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="px-3 py-1.5 text-xs bg-[#161b22] border border-[rgba(255,255,255,0.1)] rounded-lg text-white hover:bg-[#21262d] transition-colors"
+                >
+                  Download CSV
+                </button>
+              </div>
               {recentPrompts.map((prompt, i) => (
                 <div
                   key={i}
@@ -624,6 +707,58 @@ export default function PlayPage() {
               >
                 Start Game
               </button>
+            </div>
+
+            <div className="bg-[#161b22] rounded-2xl border border-[rgba(255,255,255,0.1)] p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-white">Your Sessions</h3>
+                  <p className="text-xs text-[rgba(255,255,255,0.4)]">Resume unfinished games or review past runs</p>
+                </div>
+                <button
+                  onClick={() => userId && loadHistory(userId)}
+                  className="text-xs text-[rgba(255,255,255,0.5)] hover:text-white transition-colors"
+                >
+                  Refresh
+                </button>
+              </div>
+
+              {isHistoryLoading ? (
+                <div className="text-sm text-[rgba(255,255,255,0.4)]">Loading sessions...</div>
+              ) : historyGames.length === 0 ? (
+                <div className="text-sm text-[rgba(255,255,255,0.4)]">No sessions yet. Start a game to see history.</div>
+              ) : (
+                <div className="space-y-2 max-h-[240px] overflow-y-auto pr-1">
+                  {historyGames.map((game) => {
+                    const isPlayable = game.status === "in_progress";
+                    return (
+                      <div
+                        key={game.id}
+                        className="flex items-center justify-between gap-3 bg-[#0d1117] border border-[rgba(255,255,255,0.08)] rounded-lg px-3 py-2"
+                      >
+                        <div>
+                          <div className="text-sm text-white">{game.modelName}</div>
+                          <div className="text-xs text-[rgba(255,255,255,0.4)]">
+                            {game.status.replace("_", " ")} • {game.turnsUsed}/{game.maxTurns} turns
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setSelectedModel({ id: game.modelId, name: game.modelName });
+                            setMessages(game.messages.filter((m) => m.role !== "system"));
+                            setTurnNumber(game.turnsUsed);
+                            setGameId(game.id);
+                            setGameStatus(isPlayable ? "playing" : game.status === "won" ? "won" : "lost");
+                          }}
+                          className="px-3 py-1.5 text-xs bg-[#161b22] border border-[rgba(255,255,255,0.1)] rounded-lg text-white hover:bg-[#21262d] transition-colors"
+                        >
+                          {isPlayable ? "Resume" : "Review"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         </div>
